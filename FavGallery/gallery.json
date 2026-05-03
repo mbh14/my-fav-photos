@@ -1,6 +1,14 @@
 {
-  "updatedAt": "2026-05-03T10:07:14.099Z",
+  "updatedAt": "2026-05-03T10:08:58.957Z",
   "photos": [
+    {
+      "id": "1777802934840-0-ab7ad9c31726c",
+      "path": "FavGallery/1777802934840-1000054063.jpg",
+      "title": "A drawing by AbdulMoiz",
+      "place": "Drawing",
+      "note": "This ia a pathway followedby thefigure drawn by Abdul Moiz",
+      "createdAt": "3 May 2026"
+    },
     {
       "id": "1777802830559-0-ad099e4d1e09b8",
       "path": "FavGallery/1777802830559-1000049373.jpg",
