@@ -187,6 +187,21 @@
       line-height: 1.5;
     }
 
+    .github-box {
+      margin: 18px 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbff;
+    }
+
+    .github-box p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
     .form-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -493,6 +508,14 @@
       <section class="upload-panel" aria-labelledby="uploadTitle">
         <h2 id="uploadTitle">Submit a photo</h2>
         <form id="photoForm">
+          <div class="github-box">
+            <div class="field">
+              <label for="githubToken">GitHub token for saving photos</label>
+              <input id="githubToken" type="password" autocomplete="off" placeholder="Fine-grained token with Contents read/write">
+            </div>
+            <p>Photos are saved to <strong>FavGallery</strong> in <strong>mbh14/my-fav-photos</strong>. Use a fine-grained token limited to this repository with Contents read/write access.</p>
+          </div>
+
           <label class="dropzone" id="dropzone">
             <input id="photoInput" type="file" accept="image/*" multiple>
             <span class="drop-content">
@@ -547,8 +570,17 @@
 
   <script>
     const storageKey = "favorite-photo-portal";
+    const githubConfig = {
+      owner: "mbh14",
+      repo: "my-fav-photos",
+      branch: "master",
+      folder: "FavGallery",
+      manifest: "FavGallery/gallery.json"
+    };
+
     const form = document.querySelector("#photoForm");
     const input = document.querySelector("#photoInput");
+    const tokenInput = document.querySelector("#githubToken");
     const titleInput = document.querySelector("#photoTitle");
     const placeInput = document.querySelector("#photoPlace");
     const noteInput = document.querySelector("#photoNote");
@@ -560,6 +592,7 @@
 
     let photos = loadPhotos();
     renderGallery();
+    loadGithubGallery();
 
     function loadPhotos() {
       try {
@@ -573,12 +606,183 @@
       localStorage.setItem(storageKey, JSON.stringify(photos));
     }
 
+    function getGithubToken() {
+      return tokenInput.value.trim();
+    }
+
+    function encodeRepoPath(path) {
+      return path.split("/").map(encodeURIComponent).join("/");
+    }
+
+    function githubApiUrl(path) {
+      return `https://api.github.com/repos/${githubConfig.owner}/${githubConfig.repo}/contents/${encodeRepoPath(path)}`;
+    }
+
+    function rawGithubUrl(path) {
+      return `https://raw.githubusercontent.com/${githubConfig.owner}/${githubConfig.repo}/${githubConfig.branch}/${encodeRepoPath(path)}`;
+    }
+
+    async function githubRequest(path, options = {}) {
+      const token = getGithubToken();
+      const headers = {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...options.headers
+      };
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${githubApiUrl(path)}${options.ref ? `?ref=${githubConfig.branch}` : ""}`, {
+        ...options,
+        headers
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `GitHub request failed with ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function loadGithubGallery() {
+      try {
+        const response = await fetch(`${rawGithubUrl(githubConfig.manifest)}?v=${Date.now()}`, {
+          cache: "no-store"
+        });
+
+        if (!response.ok) return;
+
+        const manifest = await response.json();
+        if (!Array.isArray(manifest.photos)) return;
+
+        photos = manifest.photos.map((photo) => ({
+          ...photo,
+          src: rawGithubUrl(photo.path)
+        }));
+        savePhotos();
+        renderGallery();
+        status.textContent = `Loaded ${pluralize(photos.length)} from GitHub.`;
+      } catch {
+        status.textContent = "Could not load the GitHub gallery yet.";
+      }
+    }
+
     function fileToDataUrl(file) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
         reader.readAsDataURL(file);
+      });
+    }
+
+    function fileToBase64(file) {
+      return fileToDataUrl(file).then((dataUrl) => dataUrl.split(",")[1]);
+    }
+
+    function safeFileName(fileName) {
+      const extension = fileName.includes(".") ? fileName.split(".").pop().toLowerCase() : "jpg";
+      const base = fileName
+        .replace(/\.[^.]+$/, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 42) || "photo";
+
+      return `${Date.now()}-${base}.${extension}`;
+    }
+
+    async function getManifestForUpdate() {
+      try {
+        const current = await githubRequest(githubConfig.manifest, {
+          method: "GET",
+          ref: true
+        });
+        const decoded = JSON.parse(atob(current.content.replace(/\s/g, "")));
+        return {
+          sha: current.sha,
+          photos: Array.isArray(decoded.photos) ? decoded.photos : []
+        };
+      } catch {
+        return { sha: null, photos: [] };
+      }
+    }
+
+    async function uploadToGithub(file, photo) {
+      const content = await fileToBase64(file);
+      await githubRequest(photo.path, {
+        method: "PUT",
+        body: JSON.stringify({
+          message: `Add ${photo.title} to FavGallery`,
+          content,
+          branch: githubConfig.branch
+        })
+      });
+    }
+
+    async function updateGithubManifest(newEntries) {
+      const current = await getManifestForUpdate();
+      const manifest = {
+        updatedAt: new Date().toISOString(),
+        photos: [...newEntries, ...current.photos]
+      };
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(manifest, null, 2))));
+      const body = {
+        message: "Update FavGallery manifest",
+        content,
+        branch: githubConfig.branch
+      };
+
+      if (current.sha) {
+        body.sha = current.sha;
+      }
+
+      await githubRequest(githubConfig.manifest, {
+        method: "PUT",
+        body: JSON.stringify(body)
+      });
+    }
+
+    async function replaceGithubManifest(remainingPhotos) {
+      const current = await getManifestForUpdate();
+      const manifest = {
+        updatedAt: new Date().toISOString(),
+        photos: remainingPhotos.map(({ src, ...photo }) => photo)
+      };
+      const body = {
+        message: "Remove photo from FavGallery manifest",
+        content: btoa(unescape(encodeURIComponent(JSON.stringify(manifest, null, 2)))),
+        branch: githubConfig.branch
+      };
+
+      if (current.sha) {
+        body.sha = current.sha;
+      }
+
+      await githubRequest(githubConfig.manifest, {
+        method: "PUT",
+        body: JSON.stringify(body)
+      });
+    }
+
+    async function deleteGithubPhoto(photo) {
+      if (!photo.path) return;
+
+      const current = await githubRequest(photo.path, {
+        method: "GET",
+        ref: true
+      });
+
+      await githubRequest(photo.path, {
+        method: "DELETE",
+        body: JSON.stringify({
+          message: `Remove ${photo.title} from FavGallery`,
+          sha: current.sha,
+          branch: githubConfig.branch
+        })
       });
     }
 
@@ -599,7 +803,13 @@
         return;
       }
 
-      status.textContent = `Adding ${pluralize(images.length)}...`;
+      if (!getGithubToken()) {
+        status.textContent = "Paste a GitHub token first so photos can be saved to FavGallery.";
+        input.value = "";
+        return;
+      }
+
+      status.textContent = `Uploading ${pluralize(images.length)} to GitHub...`;
 
       const createdAt = new Date().toLocaleDateString(undefined, {
         month: "short",
@@ -607,20 +817,37 @@
         year: "numeric"
       });
 
-      const entries = await Promise.all(images.map(async (file, index) => ({
-        id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
-        src: await fileToDataUrl(file),
-        title: titleInput.value.trim() || file.name.replace(/\.[^.]+$/, ""),
-        place: placeInput.value.trim(),
-        note: noteInput.value.trim(),
-        createdAt
-      })));
+      try {
+        const githubToken = getGithubToken();
+        const entries = await Promise.all(images.map(async (file, index) => {
+          const fileName = safeFileName(file.name);
+          const path = `${githubConfig.folder}/${fileName}`;
+          const entry = {
+            id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+            path,
+            src: rawGithubUrl(path),
+            title: titleInput.value.trim() || file.name.replace(/\.[^.]+$/, ""),
+            place: placeInput.value.trim(),
+            note: noteInput.value.trim(),
+            createdAt
+          };
 
-      photos = [...entries, ...photos];
-      savePhotos();
-      renderGallery();
-      status.textContent = `${pluralize(entries.length)} added to your gallery.`;
-      form.reset();
+          await uploadToGithub(file, entry);
+          return entry;
+        }));
+
+        await updateGithubManifest(entries.map(({ src, ...entry }) => entry));
+
+        photos = [...entries, ...photos];
+        savePhotos();
+        renderGallery();
+        status.textContent = `${pluralize(entries.length)} saved to GitHub in FavGallery.`;
+        form.reset();
+        tokenInput.value = githubToken;
+      } catch (error) {
+        status.textContent = "GitHub upload failed. Check that your token has Contents read/write access.";
+        console.error(error);
+      }
     }
 
     function renderGallery() {
@@ -677,10 +904,29 @@
       const button = event.target.closest(".delete-btn");
       if (!button) return;
 
-      photos = photos.filter((photo) => photo.id !== button.dataset.id);
-      savePhotos();
-      renderGallery();
-      status.textContent = "Photo removed.";
+      const photo = photos.find((item) => item.id === button.dataset.id);
+      if (!photo) return;
+
+      if (!getGithubToken()) {
+        status.textContent = "Paste your GitHub token first so the photo can be removed from FavGallery.";
+        return;
+      }
+
+      const remainingPhotos = photos.filter((item) => item.id !== button.dataset.id);
+      status.textContent = "Removing photo from GitHub...";
+
+      deleteGithubPhoto(photo)
+        .then(() => replaceGithubManifest(remainingPhotos))
+        .then(() => {
+          photos = remainingPhotos;
+          savePhotos();
+          renderGallery();
+          status.textContent = "Photo removed from FavGallery.";
+        })
+        .catch((error) => {
+          status.textContent = "Could not remove the photo from GitHub. Check your token access.";
+          console.error(error);
+        });
     });
 
     ["dragenter", "dragover"].forEach((eventName) => {
