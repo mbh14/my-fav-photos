@@ -1,6 +1,14 @@
 {
-  "updatedAt": "2026-05-03T09:44:29.385Z",
+  "updatedAt": "2026-05-03T09:54:20.086Z",
   "photos": [
+    {
+      "id": "1777802055567-0-aa946206ac4438",
+      "path": "FavGallery/1777802055567-img-20251221-122903.jpg",
+      "title": "Moiz with shades",
+      "place": "Reston on sofa",
+      "note": "Abdul Moiz sitting on sofa a Reston",
+      "createdAt": "3 May 2026"
+    },
     {
       "id": "1777801464966-0-28ff8ad8c0968",
       "path": "FavGallery/1777801464966-img-20260109-130806.jpg",
