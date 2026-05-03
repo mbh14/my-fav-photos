@@ -526,7 +526,7 @@
                 </svg>
               </span>
               <span class="drop-title">Choose or drop photos here</span>
-              <span class="drop-note">You can select multiple images at once. They will appear in your gallery below.</span>
+              <span class="drop-note">Select images first, add the details below, then upload them to your gallery.</span>
             </span>
           </label>
 
@@ -549,7 +549,7 @@
             <p class="status" id="status" role="status"></p>
             <div class="button-row">
               <button class="btn secondary" id="clearForm" type="button">Clear form</button>
-              <button class="btn" type="submit">Add selected photos</button>
+              <button class="btn" type="submit">Upload selected photos</button>
             </div>
           </div>
         </form>
@@ -591,6 +591,7 @@
     const clearForm = document.querySelector("#clearForm");
 
     let photos = loadPhotos();
+    let selectedFiles = [];
     renderGallery();
     loadGithubGallery();
 
@@ -647,15 +648,29 @@
       return response.json();
     }
 
+    function decodeBase64Json(content) {
+      return JSON.parse(decodeURIComponent(escape(atob(content.replace(/\s/g, "")))));
+    }
+
     async function loadGithubGallery() {
       try {
-        const response = await fetch(`${rawGithubUrl(githubConfig.manifest)}?v=${Date.now()}`, {
-          cache: "no-store"
-        });
+        let manifest;
 
-        if (!response.ok) return;
+        try {
+          const apiManifest = await githubRequest(githubConfig.manifest, {
+            method: "GET",
+            ref: true
+          });
+          manifest = decodeBase64Json(apiManifest.content);
+        } catch {
+          const response = await fetch(`${rawGithubUrl(githubConfig.manifest)}?v=${Date.now()}`, {
+            cache: "no-store"
+          });
 
-        const manifest = await response.json();
+          if (!response.ok) return;
+          manifest = await response.json();
+        }
+
         if (!Array.isArray(manifest.photos)) return;
 
         photos = manifest.photos.map((photo) => ({
@@ -695,13 +710,24 @@
       return `${Date.now()}-${base}.${extension}`;
     }
 
+    function stageSelectedPhotos(files) {
+      selectedFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
+
+      if (!selectedFiles.length) {
+        status.textContent = "Please choose at least one image file.";
+        return;
+      }
+
+      status.textContent = `${pluralize(selectedFiles.length)} selected. Add title, place, or note, then upload.`;
+    }
+
     async function getManifestForUpdate() {
       try {
         const current = await githubRequest(githubConfig.manifest, {
           method: "GET",
           ref: true
         });
-        const decoded = JSON.parse(atob(current.content.replace(/\s/g, "")));
+        const decoded = decodeBase64Json(current.content);
         return {
           sha: current.sha,
           photos: Array.isArray(decoded.photos) ? decoded.photos : []
@@ -791,11 +817,14 @@
     }
 
     function resetForm() {
+      const githubToken = getGithubToken();
       form.reset();
+      tokenInput.value = githubToken;
+      selectedFiles = [];
       status.textContent = "";
     }
 
-    async function addSelectedPhotos(files) {
+    async function addSelectedPhotos(files = selectedFiles) {
       const images = Array.from(files).filter((file) => file.type.startsWith("image/"));
 
       if (!images.length) {
@@ -844,6 +873,8 @@
         status.textContent = `${pluralize(entries.length)} saved to GitHub in FavGallery.`;
         form.reset();
         tokenInput.value = githubToken;
+        input.value = "";
+        selectedFiles = [];
       } catch (error) {
         status.textContent = "GitHub upload failed. Check that your token has Contents read/write access.";
         console.error(error);
@@ -891,11 +922,11 @@
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      addSelectedPhotos(input.files);
+      addSelectedPhotos();
     });
 
     input.addEventListener("change", () => {
-      addSelectedPhotos(input.files);
+      stageSelectedPhotos(input.files);
     });
 
     clearForm.addEventListener("click", resetForm);
@@ -944,7 +975,7 @@
     });
 
     dropzone.addEventListener("drop", (event) => {
-      addSelectedPhotos(event.dataTransfer.files);
+      stageSelectedPhotos(event.dataTransfer.files);
     });
   </script>
 </body>
