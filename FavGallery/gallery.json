@@ -1,6 +1,14 @@
 {
-  "updatedAt": "2026-05-03T10:08:58.957Z",
+  "updatedAt": "2026-05-03T10:13:46.792Z",
   "photos": [
+    {
+      "id": "1777803222273-0-21d36cce89e598",
+      "path": "FavGallery/1777803222273-1000012229.jpg",
+      "title": "Abdul Moiz",
+      "place": "Airport Islamabad",
+      "note": "A completely random photo of Abdul Moiz at Islamabad Airport",
+      "createdAt": "3 May 2026"
+    },
     {
       "id": "1777802934840-0-ab7ad9c31726c",
       "path": "FavGallery/1777802934840-1000054063.jpg",
