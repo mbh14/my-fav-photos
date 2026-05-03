@@ -526,7 +526,7 @@
             <p class="status" id="status" role="status"></p>
             <div class="button-row">
               <button class="btn secondary" id="clearForm" type="button">Clear form</button>
-              <button class="btn" type="submit">Add to gallery</button>
+              <button class="btn" type="submit">Add selected photos</button>
             </div>
           </div>
         </form>
@@ -664,6 +664,10 @@
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      addSelectedPhotos(input.files);
+    });
+
+    input.addEventListener("change", () => {
       addSelectedPhotos(input.files);
     });
 
