@@ -1,6 +1,14 @@
 {
-  "updatedAt": "2026-05-03T10:13:46.792Z",
+  "updatedAt": "2026-05-03T10:15:43.182Z",
   "photos": [
+    {
+      "id": "1777803338775-0-4efaa05a50b2f",
+      "path": "FavGallery/1777803338775-1000027233.jpg",
+      "title": "Foggy Morning",
+      "place": "Fog Islamabad",
+      "note": "Its an unusual winter foggy morning in Islamabad",
+      "createdAt": "3 May 2026"
+    },
     {
       "id": "1777803222273-0-21d36cce89e598",
       "path": "FavGallery/1777803222273-1000012229.jpg",
