@@ -513,7 +513,7 @@
               <label for="githubToken">GitHub token for saving photos</label>
               <input id="githubToken" type="password" autocomplete="off" placeholder="Fine-grained token with Contents read/write">
             </div>
-            <p>Photos are saved to <strong>FavGallery</strong> in <strong>mbh14/my-fav-photos</strong>. Use a fine-grained token limited to this repository with Contents read/write access.</p>
+            <p>Photos are saved to <strong>FavGallery</strong> in <strong>mbh14/my-fav-photos</strong>. Use a fine-grained token limited to this repository with Contents read/write access. The token is remembered only in this browser, not saved in the public repository.</p>
           </div>
 
           <label class="dropzone" id="dropzone">
@@ -570,6 +570,7 @@
 
   <script>
     const storageKey = "favorite-photo-portal";
+    const tokenStorageKey = "favorite-photo-portal-github-token";
     const githubConfig = {
       owner: "mbh14",
       repo: "my-fav-photos",
@@ -589,6 +590,8 @@
     const gallery = document.querySelector("#gallery");
     const counter = document.querySelector("#counter");
     const clearForm = document.querySelector("#clearForm");
+
+    tokenInput.value = localStorage.getItem(tokenStorageKey) || "";
 
     let photos = loadPhotos();
     let selectedFiles = [];
@@ -642,7 +645,9 @@
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || `GitHub request failed with ${response.status}`);
+        const error = new Error(errorText || `GitHub request failed with ${response.status}`);
+        error.status = response.status;
+        throw error;
       }
 
       return response.json();
@@ -797,19 +802,29 @@
     async function deleteGithubPhoto(photo) {
       if (!photo.path) return;
 
-      const current = await githubRequest(photo.path, {
-        method: "GET",
-        ref: true
-      });
+      let current;
+      try {
+        current = await githubRequest(photo.path, {
+          method: "GET",
+          ref: true
+        });
+      } catch (error) {
+        if (error.status === 404) return;
+        throw error;
+      }
 
-      await githubRequest(photo.path, {
-        method: "DELETE",
-        body: JSON.stringify({
-          message: `Remove ${photo.title} from FavGallery`,
-          sha: current.sha,
-          branch: githubConfig.branch
-        })
-      });
+      try {
+        await githubRequest(photo.path, {
+          method: "DELETE",
+          body: JSON.stringify({
+            message: `Remove ${photo.title} from FavGallery`,
+            sha: current.sha,
+            branch: githubConfig.branch
+          })
+        });
+      } catch (error) {
+        if (error.status !== 404) throw error;
+      }
     }
 
     function pluralize(count) {
@@ -871,6 +886,7 @@
         savePhotos();
         renderGallery();
         status.textContent = `${pluralize(entries.length)} saved to GitHub in FavGallery.`;
+        localStorage.setItem(tokenStorageKey, githubToken);
         form.reset();
         tokenInput.value = githubToken;
         input.value = "";
@@ -929,6 +945,16 @@
       stageSelectedPhotos(input.files);
     });
 
+    tokenInput.addEventListener("input", () => {
+      const token = getGithubToken();
+
+      if (token) {
+        localStorage.setItem(tokenStorageKey, token);
+      } else {
+        localStorage.removeItem(tokenStorageKey);
+      }
+    });
+
     clearForm.addEventListener("click", resetForm);
 
     gallery.addEventListener("click", (event) => {
@@ -943,18 +969,22 @@
         return;
       }
 
+      const previousPhotos = [...photos];
       const remainingPhotos = photos.filter((item) => item.id !== button.dataset.id);
+      photos = remainingPhotos;
+      savePhotos();
+      renderGallery();
       status.textContent = "Removing photo from GitHub...";
 
-      deleteGithubPhoto(photo)
-        .then(() => replaceGithubManifest(remainingPhotos))
+      replaceGithubManifest(remainingPhotos)
+        .then(() => deleteGithubPhoto(photo))
         .then(() => {
-          photos = remainingPhotos;
-          savePhotos();
-          renderGallery();
           status.textContent = "Photo removed from FavGallery.";
         })
         .catch((error) => {
+          photos = previousPhotos;
+          savePhotos();
+          renderGallery();
           status.textContent = "Could not remove the photo from GitHub. Check your token access.";
           console.error(error);
         });
